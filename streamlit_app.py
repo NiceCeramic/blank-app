@@ -7,7 +7,7 @@ st.title("🎯 레이저사격 점수 기록 시스템")
 
 # 세션 상태 초기화
 if 'score_data' not in st.session_state:
-    st.session_state.score_data = pd.DataFrame(columns=["날짜", "학년", "반", "번호", "이름", "점수"])
+    st.session_state.score_data = pd.DataFrame(columns=["날짜", "학년", "반", "번호", "이름", "점수", "입력시간"])
 
 # --- 점수 입력 폼 ---
 st.header("📌 점수 입력")
@@ -30,8 +30,8 @@ with st.form("score_form"):
         if not name or not number:
             st.warning("이름과 번호는 반드시 입력해주세요.")
         else:
-            new_row = pd.DataFrame([[date, grade, class_name, number, name, score]],
-                                   columns=["날짜", "학년", "반", "번호", "이름", "점수"])
+            new_row = pd.DataFrame([[date, grade, class_name, number, name, score, datetime.datetime.now()]],
+                                   columns=["날짜", "학년", "반", "번호", "이름", "점수", "입력시간"])
             st.session_state.score_data = pd.concat([st.session_state.score_data, new_row], ignore_index=True)
             st.success(f"{grade} {class_name} {number}번 {name} 학생의 점수가 저장되었습니다!")
 
@@ -40,23 +40,27 @@ if not st.session_state.score_data.empty:
     df = st.session_state.score_data.copy()
     df['날짜'] = pd.to_datetime(df['날짜'])
 
-    st.header("📈 학생별 점수 변화 추이")
+    st.header("📈 학생별 점수 변화 추이 (평균값 기준)")
     selected_names = st.multiselect("학생 선택", df["이름"].unique(), default=list(df["이름"].unique()))
 
     if selected_names:
         filtered = df[df["이름"].isin(selected_names)]
-        chart = alt.Chart(filtered).mark_line(point=True).encode(
+        grouped = filtered.groupby(["날짜", "이름"])["점수"].mean().reset_index()
+
+        chart = alt.Chart(grouped).mark_line(point=True).encode(
             x="날짜:T",
             y="점수:Q",
             color="이름:N"
         ).properties(width=700, height=400)
         st.altair_chart(chart)
 
-    st.header("🏆 반별 순위 (최신 날짜 기준)")
+    st.header("🏆 반별 순위 (최신 날짜 기준, 최고 점수 기준)")
     latest_date = df["날짜"].max()
     latest_scores = df[df["날짜"] == latest_date]
-    ranked = latest_scores.sort_values(by=["학년", "반", "점수"], ascending=[True, True, False])
+    latest_max = latest_scores.groupby(["학년", "반", "번호", "이름"])["점수"].max().reset_index()
+    ranked = latest_max.sort_values(by=["학년", "반", "점수"], ascending=[True, True, False])
     ranked['순위'] = ranked.groupby(["학년", "반"])['점수'].rank(ascending=False, method='min')
+
     st.subheader(f"📅 {latest_date.strftime('%Y-%m-%d')} 기준")
     st.dataframe(ranked[["학년", "반", "번호", "이름", "점수", "순위"]].sort_values(by=["학년", "반", "순위"]))
 
@@ -69,4 +73,3 @@ if st.button("💾 전체 데이터 다운로드"):
         file_name='laser_scores.csv',
         mime='text/csv'
     )
-
